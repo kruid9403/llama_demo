@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Llama Research Console</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg">
+      <div class="orb orb-one"></div>
+      <div class="orb orb-two"></div>
+      <div class="grid"></div>
+    </div>
+
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">L3</span>
+          <div>
+            <div class="brand-title">Llama Research Console</div>
+            <div class="brand-subtitle">Grounded answers with your retrieval pipeline</div>
+          </div>
+        </div>
+        <div class="status">
+          <span class="dot"></span>
+          Local model
+        </div>
+      </header>
+
+      <section id="chat" class="chat">
+        <div class="message system">
+          Ask a question to start. The model will answer with citations from the retrieved context.
+        </div>
+      </section>
+
+      <form id="composer" class="composer">
+        <div class="input-wrap">
+          <label for="source-url" class="label">Source URL (optional)</label>
+          <input
+            id="source-url"
+            name="source-url"
+            type="url"
+            placeholder="https://example.com/paper"
+          />
+          <label for="prompt" class="sr-only">Question</label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            rows="1"
+            placeholder="Ask about a paper, concept, or experiment..."
+          ></textarea>
+          <div class="hint">Shift + Enter for a new line</div>
+        </div>
+        <button type="submit" id="send">
+          Send
+        </button>
+      </form>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

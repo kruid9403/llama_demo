@@ -1,2 +1,5 @@
 .env
 .venv
+__pycache__/
+messages/system_prompt.md
+*.pdf
