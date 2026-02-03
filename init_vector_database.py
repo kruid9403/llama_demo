@@ -9,8 +9,11 @@ from bs4 import BeautifulSoup
 import numpy as np
 import hashlib
 import tiktoken
+from dotenv import load_dotenv
 
-DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5432/embedding_db")
+load_dotenv()
+
+DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
 
 EMBEDDING_DIM = 384
 CHUNK_SIZE = 500

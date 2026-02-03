@@ -1,9 +1,11 @@
+import os
 import numpy as np
 import psycopg
 import threading
 
 from typing import List
 from transformers import TextIteratorStreamer
+from dotenv import load_dotenv
 
 from messages.system_prompt import get_system_prompt
 from llama_demo import load_model, _compute_eot_ids
@@ -12,7 +14,9 @@ from llama_demo import load_model, _compute_eot_ids
 # CONFIG
 # =========================
 
-DB_URL = "postgresql://dev_user:dev_password@localhost:5432/embedding_db"
+load_dotenv()
+
+DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
 EMBEDDING_DIM = 384
 TOP_K = 8
 MAX_NEW_TOKENS = 512

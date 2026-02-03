@@ -3,6 +3,7 @@ const composer = document.getElementById("composer");
 const promptInput = document.getElementById("prompt");
 const urlInput = document.getElementById("source-url");
 const sendButton = document.getElementById("send");
+const statusText = document.getElementById("status-text");
 
 const history = [];
 
@@ -21,8 +22,13 @@ function setBusy(isBusy) {
   sendButton.textContent = isBusy ? "Thinking..." : "Send";
 }
 
+function setStatus(text) {
+  statusText.textContent = text;
+}
+
 async function ask(question, url) {
   setBusy(true);
+  setStatus("Sending request...");
   const assistantBubble = addMessage("assistant", "");
   try {
     const response = await fetch("/api/stream", {
@@ -38,6 +44,7 @@ async function ask(question, url) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let answer = "";
+    let pending = "";
 
     while (true) {
       const { value, done } = await reader.read();
@@ -45,9 +52,31 @@ async function ask(question, url) {
         break;
       }
       const chunk = decoder.decode(value, { stream: true });
-      answer += chunk;
-      assistantBubble.textContent = answer;
-      chat.scrollTop = chat.scrollHeight;
+      pending += chunk;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (line.startsWith("[[STATUS]] ")) {
+          setStatus(line.replace("[[STATUS]] ", ""));
+          continue;
+        }
+        answer += line + "\n";
+      }
+
+      if (answer) {
+        assistantBubble.textContent = answer.trimEnd();
+        chat.scrollTop = chat.scrollHeight;
+      }
+    }
+
+    if (pending) {
+      if (pending.startsWith("[[STATUS]] ")) {
+        setStatus(pending.replace("[[STATUS]] ", ""));
+      } else {
+        answer += pending;
+        assistantBubble.textContent = answer.trimEnd();
+      }
     }
 
     if (!answer) {
@@ -57,8 +86,12 @@ async function ask(question, url) {
     history.push({ role: "assistant", content: answer || "No response received." });
   } catch (err) {
     assistantBubble.textContent = "Something went wrong. Check the server logs.";
+    setStatus("Request failed.");
   } finally {
     setBusy(false);
+    if (statusText.textContent !== "Request failed.") {
+      setStatus("Idle");
+    }
   }
 }
 

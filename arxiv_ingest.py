@@ -3,13 +3,15 @@ import time
 import feedparser
 import requests
 import hashlib
-import numpy as np
 import psycopg
 from pathlib import Path
 from pdfminer.high_level import extract_text
-from sentence_transformers import SentenceTransformer
 from typing import List
 from pgvector.psycopg import register_vector
+from dotenv import load_dotenv
+from embeddings import LocalEmbedder
+
+load_dotenv()
 
 
 # =========================
@@ -18,7 +20,7 @@ from pgvector.psycopg import register_vector
 
 DB_URL = os.getenv(
     "DB_URL",
-    "postgresql://dev_user:dev_password@localhost:5432/embedding_db",
+    "postgresql://dev_user:dev_password@localhost:5433/embedding_db",
 )
 
 ARXIV_API = "http://export.arxiv.org/api/query"
@@ -26,27 +28,10 @@ PDF_DIR = Path("./arxiv_pdfs")
 PDF_DIR.mkdir(exist_ok=True)
 
 MAX_RESULTS = 10
-EMBEDDING_MODEL = "intfloat/e5-base-v2"  # strong retrieval model
 
 # =========================
 # EMBEDDING
 # =========================
-
-class LocalEmbedder:
-    def __init__(self):
-        self.model = SentenceTransformer(EMBEDDING_MODEL)
-
-    def embed_query(self, text: str) -> List[float]:
-        return self.model.encode(
-            f"query: {text}",
-            normalize_embeddings=True,
-        ).tolist()
-
-    def embed_passages(self, texts: List[str]) -> List[List[float]]:
-        return self.model.encode(
-            [f"passage: {t}" for t in texts],
-            normalize_embeddings=True,
-        ).tolist()
 
 embedder = LocalEmbedder()
 
@@ -60,11 +45,11 @@ from urllib.parse import urlencode
 ARXIV_API = "http://export.arxiv.org/api/query"
 MAX_RESULTS = 50
 
-def search_arxiv(query: str):
+def search_arxiv(query: str, max_results: int = MAX_RESULTS):
     params = {
         "search_query": query,
         "start": 0,
-        "max_results": MAX_RESULTS,
+        "max_results": max_results,
         "sortBy": "relevance",
         "sortOrder": "descending",
     }
@@ -159,14 +144,18 @@ def chunk_text(text: str, max_tokens=MAX_TOKENS):
 # DB INSERT
 # =========================
 
-def ingest_paper(paper: dict):
+def ingest_paper(paper: dict, download_pdfs: bool = False):
     # get full text
     full_text = ""
-    if paper["pdf_url"]:
+    if download_pdfs and paper["pdf_url"]:
         pdf_path = download_pdf(paper["arxiv_id"], paper["pdf_url"])
         full_text = extract_pdf_text_safe(pdf_path)
 
     text_to_chunk = full_text if full_text.strip() else paper["abstract"]
+    if not text_to_chunk:
+        print(f"[skip] {paper['arxiv_id']} (no text)")
+        return
+
     checksum = hashlib.sha256(text_to_chunk.encode("utf-8")).hexdigest()
 
     # chunk it
@@ -246,6 +235,21 @@ def ingest_paper(paper: dict):
 
     print(f"[ingested] {paper['arxiv_id']}")
 
+def ingest_query(query: str, max_results: int | None = None, download_pdfs: bool | None = None):
+    if max_results is None:
+        max_results = int(os.getenv("ARXIV_MAX_RESULTS", MAX_RESULTS))
+    if download_pdfs is None:
+        download_pdfs = os.getenv("ARXIV_DOWNLOAD_PDFS", "false").lower() in {"1", "true", "yes"}
+
+    count = 0
+    for paper in search_arxiv(query, max_results=max_results):
+        try:
+            ingest_paper(paper, download_pdfs=download_pdfs)
+            count += 1
+        except Exception as exc:
+            print(f"[error] {paper['arxiv_id']} → {exc}")
+    return count
+
 # =========================
 # ENTRYPOINT
 # =========================
@@ -257,8 +261,4 @@ if __name__ == "__main__":
         if not query:
             break
 
-        for paper in search_arxiv(query):
-            try:
-                ingest_paper(paper)
-            except Exception as e:
-                print(f"[error] {paper['arxiv_id']} → {e}")
+        ingest_query(query)

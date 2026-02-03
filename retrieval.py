@@ -1,9 +1,14 @@
 # retrieval.py
+import os
 import psycopg
+from dotenv import load_dotenv
 from embeddings import LocalEmbedder
 
-DB_URL = "postgresql://dev_user:dev_password@localhost:5432/embedding_db"
+load_dotenv()
+
+DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
 TOP_K = 8
+RECENT_DOCS_LIMIT = int(os.getenv("RECENT_DOCS_LIMIT", "10"))
 
 embedder = LocalEmbedder()
 
@@ -14,6 +19,12 @@ def retrieve_chunks(question: str):
         with conn.cursor() as cur:
             cur.execute(
                 """
+                WITH recent_docs AS (
+                    SELECT id
+                    FROM documents
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                )
                 SELECT
                     c.content,
                     c.embedding <=> %s::vector AS distance,
@@ -22,10 +33,11 @@ def retrieve_chunks(question: str):
                 FROM chunks c
                 JOIN sections s ON s.id = c.section_id
                 JOIN documents d ON d.id = s.document_id
+                JOIN recent_docs r ON r.id = d.id
                 ORDER BY c.embedding <=> %s::vector
                 LIMIT %s;
                 """,
-                (query_vec, query_vec, TOP_K),
+                (RECENT_DOCS_LIMIT, query_vec, query_vec, TOP_K),
             )
             rows = cur.fetchall()
 
