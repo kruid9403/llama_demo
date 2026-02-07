@@ -28,6 +28,8 @@ Set values in `.env`:
 - Optional: `DB_URL` to override the default connection string.
 - Optional: `ARXIV_MAX_RESULTS` to cap per-query ingestion (default 10).
 - Optional: `ARXIV_DOWNLOAD_PDFS` to fetch full PDFs (`true`/`false`, default `false`).
+- Optional: `USE_8BIT` to run the LLM in 8-bit quantized mode (`1`/`0`, default `1`).
+- Optional: `EMBEDDING_DEVICE` for embedding model placement (`cpu`/`cuda`, default `cpu`).
 
 Example:
 ```bash
@@ -51,9 +53,9 @@ python init_vector_database.py
 ```
 
 **Ingest Content**
-1. URL ingestion (interactive):
+1. URL ingestion (optional):
 ```bash
-python init_vector_database.py
+python init_vector_database.py --url https://example.com/docs
 ```
 
 2. arXiv ingestion (interactive search):

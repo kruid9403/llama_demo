@@ -4,9 +4,14 @@ from transformers import TextIteratorStreamer
 from messages.system_prompt import get_system_prompt
 
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 os.environ.setdefault("HF_TOKEN", "sk-prod-onwALVUHNAKLSJRFNWJKGILUVHDAFKLJVNFGIALDRhvn")
+os.environ.setdefault(
+    "PYTORCH_CUDA_ALLOC_CONF",
+    "expandable_segments:True,garbage_collection_threshold:0.7,max_split_size_mb:128",
+)
 
 load_dotenv()
 
@@ -15,7 +20,7 @@ temperature = float(os.getenv("TEMPERATURE", "0.7"))
 
 MODEL_ID = os.getenv("MODEL_ID", "meta-llama/Llama-3.1-8B-Instruct")
 TOKENIZER_ID = os.getenv("TOKENIZER_ID", MODEL_ID)
-USE_8BIT = os.getenv("USE_8BIT", "0") == "1"
+USE_8BIT = os.getenv("USE_8BIT", "1") == "1"
 
 device = "cuda" if os.getenv("USE_CUDA", "1") == "1" else "cpu"
 
@@ -37,7 +42,7 @@ device = "cuda" if os.getenv("USE_CUDA", "1") == "1" else "cpu"
 # )
 
 def load_model():
-    print(f"Device: {device}")
+    print(f"Device: {device} | USE_8BIT={USE_8BIT}")
 
     tokenizer = AutoTokenizer.from_pretrained(
         TOKENIZER_ID,
@@ -47,14 +52,18 @@ def load_model():
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        load_in_8bit=USE_8BIT,
+    model_kwargs = dict(
         device_map="auto",
         token=os.getenv("HF_TOKEN"),
         offload_buffers=True,
-        dtype="auto"
+        low_cpu_mem_usage=True,
     )
+    if USE_8BIT:
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+    else:
+        model_kwargs["torch_dtype"] = torch.float16 if device == "cuda" else torch.float32
+
+    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
 
     return model, tokenizer
 

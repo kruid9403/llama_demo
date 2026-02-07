@@ -104,7 +104,6 @@ def generation_node(state: ResearchState) -> ResearchState:
             attention_mask=enc.get("attention_mask"),
             streamer=streamer,
             max_new_tokens=512,
-            temperature=0.3,
             do_sample=False,
             eos_token_id=eos_ids,
             pad_token_id=tokenizer.pad_token_id,

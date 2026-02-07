@@ -1,11 +1,13 @@
-# embeddings.py
+import os
+
 from sentence_transformers import SentenceTransformer
 
 EMBEDDING_MODEL_NAME = "intfloat/e5-base-v2"
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")
 
 class LocalEmbedder:
     def __init__(self):
-        self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        self.model = SentenceTransformer(EMBEDDING_MODEL_NAME, device=EMBEDDING_DEVICE)
 
     def embed_query(self, text: str):
         return self.model.encode(

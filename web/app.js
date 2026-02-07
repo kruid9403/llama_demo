@@ -64,10 +64,9 @@ async function ask(question, url) {
         answer += line + "\n";
       }
 
-      if (answer) {
-        assistantBubble.textContent = answer.trimEnd();
-        chat.scrollTop = chat.scrollHeight;
-      }
+      const liveTail = pending.startsWith("[[") ? "" : pending;
+      assistantBubble.textContent = (answer + liveTail).trimEnd();
+      chat.scrollTop = chat.scrollHeight;
     }
 
     if (pending) {
@@ -75,9 +74,9 @@ async function ask(question, url) {
         setStatus(pending.replace("[[STATUS]] ", ""));
       } else {
         answer += pending;
-        assistantBubble.textContent = answer.trimEnd();
       }
     }
+    assistantBubble.textContent = answer.trimEnd();
 
     if (!answer) {
       assistantBubble.textContent = "No response received.";

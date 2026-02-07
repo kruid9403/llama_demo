@@ -1,159 +1,161 @@
+import argparse
+import hashlib
 import os
 from typing import List
-from contextlib import contextmanager
-from pgvector.psycopg import register_vector
-from psycopg_pool import ConnectionPool
+from urllib.parse import urlparse
+
 import psycopg
 import requests
-from bs4 import BeautifulSoup
-import numpy as np
-import hashlib
 import tiktoken
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+
+from embeddings import LocalEmbedder
 
 load_dotenv()
 
 DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
-
-EMBEDDING_DIM = 384
-CHUNK_SIZE = 500
-
-TOKENIZER = tiktoken.get_encoding("cl100k_base") 
-MAX_TOKENS = 400 
+TOKENIZER = tiktoken.get_encoding("cl100k_base")
+MAX_TOKENS = 400
 OVERLAP = 50
+
+embedder: LocalEmbedder | None = None
+
+
+def get_embedder() -> LocalEmbedder:
+    global embedder
+    if embedder is None:
+        embedder = LocalEmbedder()
+    return embedder
+
 
 def count_tokens(text: str) -> int:
     return len(TOKENIZER.encode(text))
 
+
 def chunk_tokens(text: str) -> List[str]:
     tokens = TOKENIZER.encode(text)
-    chunks = []
+    chunks: List[str] = []
 
     i = 0
     while i < len(tokens):
-        chunk = tokens[i:i + MAX_TOKENS]
+        chunk = tokens[i : i + MAX_TOKENS]
         chunks.append(TOKENIZER.decode(chunk))
         i += MAX_TOKENS - OVERLAP
 
     return chunks
 
-#----------- Embedding function -----------
 
-def embed_texts(texts: List[str]) -> List[List[float]]:
-    return[np.random.rand(EMBEDDING_DIM).tolist() for _ in texts]
+def _is_valid_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-#----------- Chunking function -----------
+def _get_or_create_source(cur: psycopg.Cursor, name: str, base_url: str, doc_type: str) -> int:
+    cur.execute("SELECT id FROM sources WHERE base_url = %s ORDER BY id ASC LIMIT 1;", (base_url,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
 
-def chunk_text(text: str, size: int = CHUNK_SIZE) -> List[str]:
-    return [text[i:i + size] for i in range(0, len(text), size)]
+    cur.execute(
+        """
+        INSERT INTO sources (name, base_url, doc_type)
+        VALUES (%s, %s, %s)
+        RETURNING id;
+        """,
+        (name, base_url, doc_type),
+    )
+    return cur.fetchone()[0]
 
-#----------- Main Insert Function -----------
-def add_vectors_from_url():
-    url = input("Enter URL to add vectors from: ").strip()
+
+def add_vectors_from_url(url: str) -> int:
+    if not url:
+        raise ValueError("URL is required.")
+    if not _is_valid_http_url(url):
+        raise ValueError(f"Invalid URL '{url}'. Use a full http(s) URL.")
+
     print(f"Scraping: {url}")
-
     response = requests.get(url, timeout=30)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "lxml")
-
     for tag in soup(["script", "style", "nav", "footer"]):
         tag.decompose()
 
     clean_text = soup.get_text(separator=" ", strip=True)
-
     if not clean_text:
         print("No extractable text found.")
-        return
+        return 0
 
     checksum = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
-    chunks = chunk_text(clean_text, CHUNK_SIZE)
-    embeddings = embed_texts(chunks)
+    chunks = chunk_tokens(clean_text)
+    embeddings = get_embedder().embed_passages(chunks)
 
     with psycopg.connect(DB_URL) as conn:
         with conn.cursor() as cur:
+            source_id = _get_or_create_source(cur, "Documentation Site", url, "docs")
 
-            # 1️⃣ Insert source
-            cur.execute("""
-                INSERT INTO sources (name, base_url, doc_type)
-                VALUES (%s, %s, %s)
-                ON CONFLICT DO NOTHING
-                RETURNING id;
-            """, ("Documentation Site", url, "docs"))
-
-            source_id = cur.fetchone()
-            if source_id is None:
-                cur.execute(
-                    "SELECT id FROM sources WHERE base_url = %s;",
-                    (url,)
-                )
-                source_id = cur.fetchone()
-
-            source_id = source_id[0]
-
-            # 2️⃣ Insert document
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO documents (source_id, url, checksum)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (url) DO NOTHING
+                ON CONFLICT (url) DO UPDATE SET checksum = EXCLUDED.checksum
                 RETURNING id;
-            """, (source_id, url, checksum))
+                """,
+                (source_id, url, checksum),
+            )
+            document_id = cur.fetchone()[0]
 
-            doc_id = cur.fetchone()
-            if doc_id is None:
-                cur.execute(
-                    "SELECT id FROM documents WHERE url = %s;",
-                    (url,)
-                )
-                doc_id = cur.fetchone()
-
-            document_id = doc_id[0]
-
-            # 3️⃣ Insert single section (flat scrape)
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO sections (document_id, heading, level, position)
                 VALUES (%s, %s, %s, %s)
                 RETURNING id;
-            """, (document_id, "Main Content", 1, 0))
-
+                """,
+                (document_id, "Main Content", 1, 0),
+            )
             section_id = cur.fetchone()[0]
 
-            chunk_hash = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
-
-            cur.execute("""
-                INSERT INTO chunks (
-                    section_id,
-                    content,
-                    content_hash,
-                    content_type,
-                    token_count,
-                    embedding
+            inserted = 0
+            for text_chunk, emb in zip(chunks, embeddings):
+                chunk_hash = hashlib.sha256(text_chunk.encode("utf-8")).hexdigest()
+                cur.execute(
+                    """
+                    INSERT INTO chunks (
+                        section_id,
+                        content,
+                        content_hash,
+                        content_type,
+                        token_count,
+                        embedding
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (section_id, content_hash) DO NOTHING
+                    RETURNING id;
+                    """,
+                    (
+                        section_id,
+                        text_chunk,
+                        chunk_hash,
+                        "prose",
+                        count_tokens(text_chunk),
+                        emb,
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (section_id, content_hash) DO NOTHING;
-            """, (
-                section_id,
-                clean_text,
-                chunk_hash,
-                "prose",
-                count_tokens(clean_text),
-                embeddings
-            ))
+                if cur.fetchone() is not None:
+                    inserted += 1
+
+    print(f"Inserted {inserted} chunks into pgvector from {url}.")
+    return inserted
 
 
-    print(f"Inserted {len(chunks)} chunks into pgvector.")
-
-def init_vector_database():
+def init_vector_database() -> None:
     with psycopg.connect(DB_URL) as conn:
         with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
-            # Enable pgvector
-            cur.execute("""
-                CREATE EXTENSION IF NOT EXISTS vector;
-            """)
-
-            cur.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS sources (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -161,9 +163,11 @@ def init_vector_database():
                     doc_type TEXT,
                     created_at TIMESTAMP DEFAULT now()
                 );
-            """)
+                """
+            )
 
-            cur.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS documents (
                     id SERIAL PRIMARY KEY,
                     source_id INTEGER REFERENCES sources(id) ON DELETE CASCADE,
@@ -174,9 +178,11 @@ def init_vector_database():
                     checksum TEXT,
                     created_at TIMESTAMP DEFAULT now()
                 );
-            """)
+                """
+            )
 
-            cur.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS sections (
                     id SERIAL PRIMARY KEY,
                     document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
@@ -185,37 +191,67 @@ def init_vector_database():
                     anchor TEXT,
                     position INTEGER
                 );
-            """)
+                """
+            )
 
-            cur.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS chunks (
                     id SERIAL PRIMARY KEY,
                     section_id INTEGER REFERENCES sections(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
+                    content_hash TEXT,
                     content_type TEXT,
                     language TEXT,
                     token_count INTEGER,
+                    embedding VECTOR(384),
                     created_at TIMESTAMP DEFAULT now()
                 );
-            """)
+                """
+            )
 
-            # 🔑 REQUIRED MIGRATION
-            cur.execute("""
-                ALTER TABLE chunks
-                ADD COLUMN IF NOT EXISTS embedding VECTOR(384);
-            """)
+            # Migrations for pre-existing databases
+            cur.execute("ALTER TABLE chunks ADD COLUMN IF NOT EXISTS content_hash TEXT;")
+            cur.execute("ALTER TABLE chunks ADD COLUMN IF NOT EXISTS embedding VECTOR(384);")
 
-            # Vector index (safe now)
-            cur.execute("""
+            cur.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS chunks_section_content_hash_uidx
+                ON chunks (section_id, content_hash);
+                """
+            )
+            cur.execute(
+                """
                 CREATE INDEX IF NOT EXISTS chunks_embedding_idx
                 ON chunks
                 USING hnsw (embedding vector_cosine_ops);
-            """)
+                """
+            )
 
     print("Vector schema initialized successfully.")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Initialize vector DB schema and optionally ingest URLs.")
+    parser.add_argument(
+        "--url",
+        action="append",
+        default=[],
+        help="Optional URL to scrape and ingest. Can be passed multiple times.",
+    )
+    args = parser.parse_args()
+
     init_vector_database()
-    add_vectors_from_url()
-    
+
+    if args.url:
+        for url in args.url:
+            try:
+                add_vectors_from_url(url.strip())
+            except Exception as exc:
+                print(f"Failed to ingest {url}: {exc}")
+    else:
+        print("No URLs provided. Runtime ingestion happens automatically from searches during operations.")
+
+
+if __name__ == "__main__":
+    main()
