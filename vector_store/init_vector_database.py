@@ -10,7 +10,7 @@ import tiktoken
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from embeddings import LocalEmbedder
+from vector_store.embeddings import EMBEDDING_DIM, LocalEmbedder
 
 load_dotenv()
 
@@ -108,13 +108,27 @@ def add_vectors_from_url(url: str) -> int:
 
             cur.execute(
                 """
-                INSERT INTO sections (document_id, heading, level, position)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id;
+                SELECT id
+                FROM sections
+                WHERE document_id = %s AND heading = %s AND position = %s
+                ORDER BY id ASC
+                LIMIT 1;
                 """,
-                (document_id, "Main Content", 1, 0),
+                (document_id, "Main Content", 0),
             )
-            section_id = cur.fetchone()[0]
+            row = cur.fetchone()
+            if row is not None:
+                section_id = row[0]
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO sections (document_id, heading, level, position)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (document_id, "Main Content", 1, 0),
+                )
+                section_id = cur.fetchone()[0]
 
             inserted = 0
             for text_chunk, emb in zip(chunks, embeddings):
@@ -195,7 +209,7 @@ def init_vector_database() -> None:
             )
 
             cur.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS chunks (
                     id SERIAL PRIMARY KEY,
                     section_id INTEGER REFERENCES sections(id) ON DELETE CASCADE,
@@ -204,7 +218,22 @@ def init_vector_database() -> None:
                     content_type TEXT,
                     language TEXT,
                     token_count INTEGER,
-                    embedding VECTOR(384),
+                    embedding VECTOR({EMBEDDING_DIM}),
+                    created_at TIMESTAMP DEFAULT now()
+                );
+                """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS document_references (
+                    id SERIAL PRIMARY KEY,
+                    document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+                    source_url TEXT,
+                    doi TEXT,
+                    venue TEXT,
+                    published_date TEXT,
+                    authors TEXT,
                     created_at TIMESTAMP DEFAULT now()
                 );
                 """
@@ -212,7 +241,7 @@ def init_vector_database() -> None:
 
             # Migrations for pre-existing databases
             cur.execute("ALTER TABLE chunks ADD COLUMN IF NOT EXISTS content_hash TEXT;")
-            cur.execute("ALTER TABLE chunks ADD COLUMN IF NOT EXISTS embedding VECTOR(384);")
+            cur.execute(f"ALTER TABLE chunks ADD COLUMN IF NOT EXISTS embedding VECTOR({EMBEDDING_DIM});")
 
             cur.execute(
                 """
@@ -225,6 +254,16 @@ def init_vector_database() -> None:
                 CREATE INDEX IF NOT EXISTS chunks_embedding_idx
                 ON chunks
                 USING hnsw (embedding vector_cosine_ops);
+                """
+            )
+            cur.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS document_references_document_source_doi_uidx
+                ON document_references (
+                    document_id,
+                    COALESCE(source_url, ''),
+                    COALESCE(doi, '')
+                );
                 """
             )
 

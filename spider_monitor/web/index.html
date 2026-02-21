@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scholarly Spider Monitor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="hero">
+        <h1>Scholarly Spider Monitor</h1>
+        <p>Start a crawl, watch live ingestion events, and track vector DB growth.</p>
+      </header>
+
+      <section class="panel controls">
+        <form id="start-form">
+          <label for="seed-urls">Seed URLs (one per line)</label>
+          <textarea id="seed-urls" rows="4" placeholder="https://arxiv.org">https://arxiv.org</textarea>
+
+          <div class="grid two">
+            <div>
+              <label for="domains">Allowed Domains (comma-separated)</label>
+              <input id="domains" type="text" placeholder="arxiv.org,biorxiv.org" />
+            </div>
+            <div>
+              <label for="raw-dir">Raw Snapshot Dir (optional)</label>
+              <input id="raw-dir" type="text" placeholder="/media/jeremy/SAMSUNG_T9/llama_demo/crawl_raw" />
+            </div>
+          </div>
+
+          <div class="grid three">
+            <div>
+              <label for="max-pages">Max Pages (0 = unlimited)</label>
+              <input id="max-pages" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label for="max-depth">Max Depth (-1 = unlimited)</label>
+              <input id="max-depth" type="number" min="-1" value="-1" />
+            </div>
+            <div>
+              <label for="delay-seconds">Delay Seconds</label>
+              <input id="delay-seconds" type="number" min="0" step="0.1" value="1.0" />
+            </div>
+          </div>
+
+          <label class="checkbox">
+            <input id="respect-robots" type="checkbox" checked />
+            Respect robots.txt
+          </label>
+
+          <div class="actions">
+            <button type="submit" id="start-btn">Start Spider</button>
+            <button type="button" id="stop-btn" class="secondary">Stop</button>
+          </div>
+          <div id="request-status" class="request-status">Idle</div>
+        </form>
+      </section>
+
+      <section class="stats">
+        <article class="card">
+          <h3>Run State</h3>
+          <div id="run-state" class="value">Idle</div>
+        </article>
+        <article class="card">
+          <h3>Pages Ingested</h3>
+          <div id="pages-ingested" class="value">0</div>
+        </article>
+        <article class="card">
+          <h3>Chunks Inserted</h3>
+          <div id="chunks-inserted" class="value">0</div>
+        </article>
+        <article class="card">
+          <h3>Errors / Skips</h3>
+          <div id="err-skip" class="value">0 / 0</div>
+        </article>
+        <article class="card">
+          <h3>Runtime</h3>
+          <div id="runtime" class="value">0s</div>
+        </article>
+        <article class="card">
+          <h3>DB (size | docs/chunks/refs)</h3>
+          <div id="db-stats" class="value">-</div>
+        </article>
+      </section>
+
+      <section class="panel logs-panel">
+        <div class="logs-header">
+          <h2>Live Event Log</h2>
+          <button type="button" id="clear-log" class="secondary small">Clear View</button>
+        </div>
+        <pre id="log-view"></pre>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

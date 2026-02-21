@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from messages.system_prompt import get_system_prompt
 from llama_demo import load_model, _compute_eot_ids
+from vector_store.embeddings import EMBEDDING_DIM
 
 # =========================
 # CONFIG
@@ -17,7 +18,6 @@ from llama_demo import load_model, _compute_eot_ids
 load_dotenv()
 
 DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
-EMBEDDING_DIM = 384
 TOP_K = 8
 MAX_NEW_TOKENS = 512
 
@@ -116,7 +116,7 @@ def generate_answer(model, tokenizer, prompt: str):
 # MAIN LOOP
 # =========================
 
-if __name__ == "__main__":
+def main() -> None:
     system_prompt = get_system_prompt()
 
     model, tokenizer = load_model()
@@ -139,3 +139,7 @@ if __name__ == "__main__":
         )
 
         generate_answer(model, tokenizer, prompt)
+
+
+if __name__ == "__main__":
+    main()

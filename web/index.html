@@ -24,13 +24,16 @@
         </div>
         <div class="status">
           <span class="dot"></span>
-          Local model
+          <div>
+            <div>Local model</div>
+            <div id="vector-size" class="status-meta">Vector DB: loading...</div>
+          </div>
         </div>
       </header>
 
       <section id="chat" class="chat">
         <div class="message system">
-          Ask a question to start. The model will answer with citations from the retrieved context.
+          Ask a question to start. Two research scientists will search scholarly sources, debate, and iterate until consensus or interrupt.
         </div>
       </section>
 
@@ -53,9 +56,10 @@
           <div class="hint">Shift + Enter for a new line</div>
           <div id="status-text" class="status-text">Idle</div>
         </div>
-        <button type="submit" id="send">
-          Send
-        </button>
+        <div class="actions">
+          <button type="submit" id="send">Send</button>
+          <button type="button" id="interrupt" class="secondary" disabled>Interrupt</button>
+        </div>
       </form>
     </main>
 

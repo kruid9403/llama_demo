@@ -9,7 +9,7 @@ from pdfminer.high_level import extract_text
 from typing import List
 from pgvector.psycopg import register_vector
 from dotenv import load_dotenv
-from embeddings import LocalEmbedder
+from vector_store.embeddings import LocalEmbedder
 
 load_dotenv()
 
@@ -24,8 +24,8 @@ DB_URL = os.getenv(
 )
 
 ARXIV_API = "http://export.arxiv.org/api/query"
-PDF_DIR = Path("./arxiv_pdfs")
-PDF_DIR.mkdir(exist_ok=True)
+PDF_DIR = Path(os.getenv("ARXIV_PDF_DIR", "./arxiv_pdfs"))
+PDF_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_RESULTS = 10
 
@@ -144,7 +144,7 @@ def chunk_text(text: str, max_tokens=MAX_TOKENS):
 # DB INSERT
 # =========================
 
-def ingest_paper(paper: dict, download_pdfs: bool = False):
+def ingest_paper(paper: dict, download_pdfs: bool = False) -> str | None:
     # get full text
     full_text = ""
     if download_pdfs and paper["pdf_url"]:
@@ -154,7 +154,7 @@ def ingest_paper(paper: dict, download_pdfs: bool = False):
     text_to_chunk = full_text if full_text.strip() else paper["abstract"]
     if not text_to_chunk:
         print(f"[skip] {paper['arxiv_id']} (no text)")
-        return
+        return None
 
     checksum = hashlib.sha256(text_to_chunk.encode("utf-8")).hexdigest()
 
@@ -165,21 +165,27 @@ def ingest_paper(paper: dict, download_pdfs: bool = False):
     with psycopg.connect(DB_URL) as conn:
         register_vector(conn)
         with conn.cursor() as cur:
-            # insert source
-            cur.execute("""
-                INSERT INTO sources (name, base_url, doc_type)
-                VALUES (%s, %s, %s)
-                ON CONFLICT DO NOTHING
-                RETURNING id;
-            """, ("arXiv", "https://arxiv.org", "preprint"))
+            # get-or-create source (avoid duplicates; sources.base_url is not unique)
+            cur.execute(
+                "SELECT id FROM sources WHERE base_url = %s ORDER BY id ASC LIMIT 1;",
+                ("https://arxiv.org",),
+            )
             row = cur.fetchone()
-            if row:
+            if row is not None:
                 source_id = row[0]
             else:
-                cur.execute("SELECT id FROM sources WHERE base_url=%s", ("https://arxiv.org",))
+                cur.execute(
+                    """
+                    INSERT INTO sources (name, base_url, doc_type)
+                    VALUES (%s, %s, %s)
+                    RETURNING id;
+                    """,
+                    ("arXiv", "https://arxiv.org", "preprint"),
+                )
                 source_id = cur.fetchone()[0]
 
             # insert document
+            doc_url = f"https://arxiv.org/abs/{paper['arxiv_id']}"
             cur.execute("""
                 INSERT INTO documents (source_id, url, title, version, checksum)
                 VALUES (%s, %s, %s, %s, %s)
@@ -187,28 +193,36 @@ def ingest_paper(paper: dict, download_pdfs: bool = False):
                 RETURNING id;
             """, (
                 source_id,
-                f"https://arxiv.org/abs/{paper['arxiv_id']}",
+                doc_url,
                 paper["title"],
                 ",".join(paper["categories"]),
                 checksum,
             ))
             document_id = cur.fetchone()[0]
 
-            # insert one “full text” section
-            cur.execute("""
-                INSERT INTO sections (document_id, heading, level, position)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT DO NOTHING
-                RETURNING id;
-            """, (document_id, "Full Text", 1, 0))
+            # get-or-create section (avoid duplicates; sections has no uniqueness constraints)
+            cur.execute(
+                """
+                SELECT id
+                FROM sections
+                WHERE document_id = %s AND heading = %s AND position = %s
+                ORDER BY id ASC
+                LIMIT 1;
+                """,
+                (document_id, "Full Text", 0),
+            )
             row = cur.fetchone()
-            if row:
+            if row is not None:
                 section_id = row[0]
             else:
-                cur.execute("""
-                    SELECT id FROM sections
-                    WHERE document_id=%s AND heading=%s;
-                """, (document_id, "Full Text"))
+                cur.execute(
+                    """
+                    INSERT INTO sections (document_id, heading, level, position)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (document_id, "Full Text", 1, 0),
+                )
                 section_id = cur.fetchone()[0]
 
             # insert chunks
@@ -234,21 +248,34 @@ def ingest_paper(paper: dict, download_pdfs: bool = False):
                 ))
 
     print(f"[ingested] {paper['arxiv_id']}")
+    return doc_url
 
 def ingest_query(query: str, max_results: int | None = None, download_pdfs: bool | None = None):
+    count, _ = ingest_query_with_urls(query, max_results=max_results, download_pdfs=download_pdfs)
+    return count
+
+
+def ingest_query_with_urls(
+    query: str,
+    max_results: int | None = None,
+    download_pdfs: bool | None = None,
+) -> tuple[int, list[str]]:
     if max_results is None:
         max_results = int(os.getenv("ARXIV_MAX_RESULTS", MAX_RESULTS))
     if download_pdfs is None:
         download_pdfs = os.getenv("ARXIV_DOWNLOAD_PDFS", "false").lower() in {"1", "true", "yes"}
 
     count = 0
+    ingested_urls: list[str] = []
     for paper in search_arxiv(query, max_results=max_results):
         try:
-            ingest_paper(paper, download_pdfs=download_pdfs)
-            count += 1
+            doc_url = ingest_paper(paper, download_pdfs=download_pdfs)
+            if doc_url:
+                count += 1
+                ingested_urls.append(doc_url)
         except Exception as exc:
             print(f"[error] {paper['arxiv_id']} → {exc}")
-    return count
+    return count, ingested_urls
 
 # =========================
 # ENTRYPOINT

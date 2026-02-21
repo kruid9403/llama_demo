@@ -1,5 +1,5 @@
 # nodes.py
-from retrieval import retrieve_chunks
+from vector_store.retrieval import retrieve_chunks
 from arxiv_ingest import ingest_query
 from url_loader import load_url_chunks
 from state import ResearchState

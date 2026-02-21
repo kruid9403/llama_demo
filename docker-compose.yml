@@ -9,6 +9,6 @@ services:
       POSTGRES_PASSWORD: dev_password
       POSTGRES_DB: embedding_db
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${PGDATA_HOST_PATH:-postgres_data}:/var/lib/postgresql/data
 volumes:
   postgres_data:

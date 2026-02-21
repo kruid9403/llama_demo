@@ -64,6 +64,10 @@ def load_model():
         model_kwargs["torch_dtype"] = torch.float16 if device == "cuda" else torch.float32
 
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
+    # Avoid invalid-flag warnings when callers run deterministic decoding.
+    model.generation_config.do_sample = False
+    model.generation_config.temperature = None
+    model.generation_config.top_p = None
 
     return model, tokenizer
 
