@@ -10,12 +10,40 @@ from typing import Any
 from urllib.parse import urlparse
 
 import psycopg
+from dotenv import load_dotenv
 
 from scholarly_spider import crawl_and_ingest
 
 
 WEB_DIR = str(Path(__file__).resolve().parent / "web")
-DB_URL = os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
+load_dotenv()
+
+DB_URL = os.path.expandvars(
+    os.getenv("DB_URL", "postgresql://dev_user:dev_password@localhost:5433/embedding_db")
+)
+DEFAULT_MONITOR_SEEDS = tuple(
+    s.strip()
+    for s in os.getenv(
+        "SPIDER_MONITOR_DEFAULT_SEEDS",
+        ",".join(
+            [
+                "https://arxiv.org/list/cs.AI/new",
+                "https://arxiv.org/list/cs.LG/new",
+                "https://arxiv.org/list/cs.CL/new",
+                "https://arxiv.org/list/cs.CV/new",
+                "https://arxiv.org/list/stat.ML/new",
+                "https://www.biorxiv.org/content/early/recent",
+                "https://www.medrxiv.org/content/early/recent",
+            ]
+        ),
+    ).split(",")
+    if s.strip()
+)
+DEFAULT_MONITOR_DOMAINS = tuple(
+    d.strip().lower()
+    for d in os.getenv("SPIDER_MONITOR_DEFAULT_DOMAINS", "arxiv.org,biorxiv.org,medrxiv.org").split(",")
+    if d.strip()
+)
 
 
 class SpiderManager:
@@ -214,15 +242,25 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         seed_urls = [str(u).strip() for u in (data.get("seed_urls") or []) if str(u).strip()]
+        seeds_from_request = bool(seed_urls)
         if not seed_urls:
-            self.send_error(400, "seed_urls must include at least one URL")
+            seed_urls = list(DEFAULT_MONITOR_SEEDS)
+        if not seed_urls:
+            self.send_error(400, "No seed_urls provided and no SPIDER_MONITOR_DEFAULT_SEEDS configured.")
             return
 
         domains = [str(d).strip().lower() for d in (data.get("allowed_domains") or []) if str(d).strip()]
         if not domains:
-            domains = sorted(
-                {(urlparse(u).hostname or "").lower() for u in seed_urls if (urlparse(u).hostname or "").strip()}
-            )
+            if seeds_from_request:
+                domains = sorted(
+                    {(urlparse(u).hostname or "").lower() for u in seed_urls if (urlparse(u).hostname or "").strip()}
+                )
+            elif DEFAULT_MONITOR_DOMAINS:
+                domains = list(DEFAULT_MONITOR_DOMAINS)
+            else:
+                domains = sorted(
+                    {(urlparse(u).hostname or "").lower() for u in seed_urls if (urlparse(u).hostname or "").strip()}
+                )
 
         raw_dir_value = data.get("raw_dir")
         raw_dir_text = raw_dir_value.strip() if isinstance(raw_dir_value, str) else ""

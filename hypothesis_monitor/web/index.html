@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hypothesis Monitor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="hero">
+        <h1>Hypothesis Monitor</h1>
+        <p>Review a research prompt, generate a topical similarity query, and produce a forward-looking hypothesis.</p>
+      </header>
+
+      <section class="stats">
+        <article class="card">
+          <h3>Database Size</h3>
+          <div id="db-size" class="value">-</div>
+        </article>
+        <article class="card">
+          <h3>Chunks Size</h3>
+          <div id="chunks-size" class="value">-</div>
+        </article>
+        <article class="card">
+          <h3>Documents</h3>
+          <div id="documents-count" class="value">0</div>
+        </article>
+        <article class="card">
+          <h3>Chunks</h3>
+          <div id="chunks-count" class="value">0</div>
+        </article>
+        <article class="card">
+          <h3>References</h3>
+          <div id="refs-count" class="value">0</div>
+        </article>
+      </section>
+
+      <section class="panel controls">
+        <form id="hypothesis-form">
+          <label for="prompt">Prompt For Review</label>
+          <textarea id="prompt" rows="4" placeholder="Example: Review this idea and propose a future research hypothesis for retrieval-augmented clinical question answering with low latency constraints."></textarea>
+
+          <div class="grid two">
+            <div>
+              <label for="top-k">Top K</label>
+              <input id="top-k" type="number" min="1" max="50" value="8" />
+            </div>
+            <label class="checkbox">
+              <input id="recent-only" type="checkbox" />
+              Recent documents only
+            </label>
+          </div>
+
+          <label for="url-filter">Optional URL Filter (one per line)</label>
+          <textarea id="url-filter" rows="2" placeholder="https://arxiv.org/abs/2401.12345"></textarea>
+
+          <div class="actions">
+            <button type="submit" id="run-btn">Generate Hypothesis</button>
+          </div>
+          <div id="status" class="status">Ready</div>
+          <div class="progress-wrap" aria-live="polite">
+            <div class="progress-track">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <div id="progress-label" class="progress-label">Idle</div>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel output">
+        <h2>Processed Similarity Query</h2>
+        <pre id="query-output">-</pre>
+      </section>
+
+      <section class="panel output">
+        <h2>Prompt Review</h2>
+        <pre id="review-output">-</pre>
+      </section>
+
+      <section class="panel output">
+        <h2>Forward-Looking Hypothesis</h2>
+        <pre id="hypothesis-output">-</pre>
+      </section>
+
+      <section class="panel output">
+        <h2>Generation Metadata</h2>
+        <pre id="generation-output">-</pre>
+      </section>
+
+      <section class="panel output">
+        <h2>Retrieved References</h2>
+        <pre id="references-output">No references yet.</pre>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

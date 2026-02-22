@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Similarity Search Monitor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="hero">
+        <h1>Similarity Search Monitor</h1>
+        <p>Query pgvector chunks and view document references from the vector database.</p>
+      </header>
+
+      <section class="stats">
+        <article class="card">
+          <h3>Database Size</h3>
+          <div id="db-size" class="value">-</div>
+        </article>
+        <article class="card">
+          <h3>Chunks Size</h3>
+          <div id="chunks-size" class="value">-</div>
+        </article>
+        <article class="card">
+          <h3>Documents</h3>
+          <div id="documents-count" class="value">0</div>
+        </article>
+        <article class="card">
+          <h3>Chunks</h3>
+          <div id="chunks-count" class="value">0</div>
+        </article>
+        <article class="card">
+          <h3>References</h3>
+          <div id="refs-count" class="value">0</div>
+        </article>
+      </section>
+
+      <section class="panel controls">
+        <form id="search-form">
+          <label for="query">Query</label>
+          <textarea id="query" rows="3" placeholder="Find papers on retrieval-augmented generation for medical QA"></textarea>
+
+          <div class="grid two">
+            <div>
+              <label for="top-k">Top K</label>
+              <input id="top-k" type="number" min="1" max="50" value="8" />
+            </div>
+            <label class="checkbox">
+              <input id="recent-only" type="checkbox" />
+              Recent documents only
+            </label>
+          </div>
+
+          <label for="url-filter">Optional URL Filter (one per line)</label>
+          <textarea id="url-filter" rows="2" placeholder="https://arxiv.org/abs/2401.12345"></textarea>
+
+          <div class="actions">
+            <button type="submit" id="search-btn">Run Search</button>
+          </div>
+
+          <div id="status" class="status">Ready</div>
+          <pre id="results">No query run yet.</pre>
+        </form>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

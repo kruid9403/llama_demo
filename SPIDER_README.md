@@ -25,8 +25,11 @@ PGDATA_HOST_PATH=/media/jeremy/SAMSUNG_T9/llama_demo/pgdata
 ARXIV_PDF_DIR=/media/jeremy/SAMSUNG_T9/llama_demo/arxiv_pdfs
 CRAWL_RAW_DIR=/media/jeremy/SAMSUNG_T9/llama_demo/crawl_raw
 SCHOLAR_ALLOWED_DOMAINS=arxiv.org,biorxiv.org,medrxiv.org
+SPIDER_MONITOR_DEFAULT_SEEDS=https://arxiv.org/list/cs.AI/new,https://arxiv.org/list/cs.LG/new,https://arxiv.org/list/cs.CL/new,https://arxiv.org/list/cs.CV/new,https://arxiv.org/list/stat.ML/new,https://www.biorxiv.org/content/early/recent,https://www.medrxiv.org/content/early/recent
+SPIDER_MONITOR_DEFAULT_DOMAINS=arxiv.org,biorxiv.org,medrxiv.org
 EMBEDDING_MODEL_NAME=intfloat/e5-small-v2
 EMBEDDING_DIM=384
+SPIDER_MAX_CITED_DOIS=200
 ```
 
 3. Start Postgres:
@@ -72,6 +75,64 @@ The UI provides:
 - Live crawl log stream
 - Counters for pages/chunks/errors/skips
 - DB totals (`documents`, `chunks`, `document_references`)
+- Seed URL input is optional; blank input uses default scholarly seeds.
+
+Default scholarly seeds used when seed input is blank:
+- `https://arxiv.org/list/cs.AI/new`
+- `https://arxiv.org/list/cs.LG/new`
+- `https://arxiv.org/list/cs.CL/new`
+- `https://arxiv.org/list/cs.CV/new`
+- `https://arxiv.org/list/stat.ML/new`
+- `https://www.biorxiv.org/content/early/recent`
+- `https://www.medrxiv.org/content/early/recent`
+
+Suggested additional scholarly sources for new-article crawling:
+- `https://www.nature.com/nature/research-articles`
+- `https://www.science.org/toc/science/current`
+- `https://elifesciences.org/recent-articles`
+- `https://journals.plos.org/plosone/browse`
+- `https://academic.oup.com/bioinformatics/advance-articles`
+Some publishers enforce stricter robots/paywall rules, so expect more `robots-skip` and `skip-content` events on those domains.
+
+Citation weighting behavior:
+- During spider ingestion, DOI mentions found in document body text are stored as citation references.
+- Similarity search boosts papers with higher in-corpus citation counts.
+- Tune weighting with:
+  - `CITATION_WEIGHT_BOOST` (default `0.03`)
+  - `CITATION_WEIGHT_MAX_BONUS` (default `0.20`)
+
+## Run The Similarity Search UI (Separate Package)
+
+Start the dedicated similarity search package:
+```bash
+source .venv/bin/activate
+python -m similarity_monitor
+```
+
+Open:
+- `http://127.0.0.1:8020`
+
+## Run The Hypothesis UI (Separate Package)
+
+Start the dedicated hypothesis package:
+```bash
+source .venv/bin/activate
+python -m hypothesis_monitor
+```
+
+Open:
+- `http://127.0.0.1:8030`
+
+Hypothesis monitor generation settings (optional `.env`):
+- `HYPOTHESIS_MODEL_ID` (default inherits `MODEL_ID`, typically `meta-llama/Llama-3.1-8B-Instruct`)
+- `HYPOTHESIS_TOKENIZER_ID`
+- `HYPOTHESIS_MAX_NEW_TOKENS` (default `420`)
+- `HYPOTHESIS_MAX_INPUT_TOKENS` (default `6000`)
+- `HYPOTHESIS_CONTEXT_MAX_CHARS` (default `24000`)
+- `HYPOTHESIS_TEMPERATURE` (default `0.9`)
+- `HYPOTHESIS_TOP_P` (default `0.92`)
+- `HYPOTHESIS_REPETITION_PENALTY` (default `1.08`)
+Hypothesis monitor requires successful Llama generation; it does not fall back to heuristic output.
 
 ## Expected Runtime Output
 
@@ -91,6 +152,11 @@ After a run:
 docker exec -it postgres-pgvector psql -U dev_user -d embedding_db -c "SELECT COUNT(*) FROM documents;"
 docker exec -it postgres-pgvector psql -U dev_user -d embedding_db -c "SELECT COUNT(*) FROM chunks;"
 docker exec -it postgres-pgvector psql -U dev_user -d embedding_db -c "SELECT COUNT(*) FROM document_references;"
+```
+
+Run direct similarity search (CLI):
+```bash
+python -m vector_store.search_database --query "topic modeling with transformers" --top-k 8
 ```
 
 ## Troubleshooting

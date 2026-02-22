@@ -138,10 +138,6 @@ function schedulePolling() {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const seedUrls = parseLineSeparated(seedUrlsEl.value);
-  if (!seedUrls.length) {
-    setRequestStatus("Provide at least one seed URL.");
-    return;
-  }
 
   const payload = {
     seed_urls: seedUrls,

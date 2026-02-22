@@ -36,6 +36,7 @@ DEFAULT_ALLOWED_DOMAINS = tuple(
     if d.strip()
 )
 MIN_CONTENT_CHARS = int(os.getenv("SPIDER_MIN_CONTENT_CHARS", "500"))
+MAX_CITED_DOIS = int(os.getenv("SPIDER_MAX_CITED_DOIS", "200"))
 DOI_PATTERN = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
 SKIP_FILE_EXTENSIONS = {
     ".pdf",
@@ -238,6 +239,25 @@ def _collect_meta_values(soup: BeautifulSoup, key: str) -> list[str]:
     return values
 
 
+def _extract_cited_dois(text: str) -> list[str]:
+    if not text:
+        return []
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for match in DOI_PATTERN.finditer(text):
+        doi = _normalize_space(match.group(0)).rstrip(".,;:)]}")
+        if not doi:
+            continue
+        doi_l = doi.lower()
+        if doi_l in seen:
+            continue
+        seen.add(doi_l)
+        ordered.append(doi)
+        if len(ordered) >= MAX_CITED_DOIS:
+            break
+    return ordered
+
+
 def _extract_body_text(soup: BeautifulSoup) -> str:
     for tag in soup(["script", "style", "noscript", "nav", "footer", "header", "svg"]):
         tag.decompose()
@@ -391,6 +411,29 @@ def _get_or_create_main_section(cur: psycopg.Cursor, document_id: int) -> int:
 
 def _upsert_reference_metadata(cur: psycopg.Cursor, document_id: int, doc: CrawledDocument) -> None:
     cur.execute("DELETE FROM document_references WHERE document_id = %s;", (document_id,))
+    cited_dois = _extract_cited_dois(doc.body)
+    self_doi = (doc.doi or "").strip().lower()
+
+    for cited_doi in cited_dois:
+        cited_doi_l = cited_doi.lower()
+        if self_doi and cited_doi_l == self_doi:
+            continue
+        cur.execute(
+            """
+            INSERT INTO document_references (
+                document_id,
+                source_url,
+                doi,
+                venue,
+                published_date,
+                authors
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING;
+            """,
+            (document_id, None, cited_doi, None, None, None),
+        )
+
     cur.execute(
         """
         INSERT INTO document_references (
